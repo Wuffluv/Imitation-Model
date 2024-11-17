@@ -12,48 +12,17 @@ namespace Markov_Chains
         public Form1()
         {
             InitializeComponent();
-            ConfigureChart();
-        }
-
-        private void ConfigureChart()
-        {
-            // Настройка области графика
-            chart1.ChartAreas.Clear();
-            chart1.Series.Clear();
-            chart1.Titles.Clear();
-
-            // Добавление области графика
-            ChartArea chartArea = new ChartArea("MainArea");
-            chartArea.AxisX.Title = "Шаги (t)";
-            chartArea.AxisY.Title = "Состояние";
-            chartArea.AxisX.TitleFont = new Font("Arial", 12, FontStyle.Bold);
-            chartArea.AxisY.TitleFont = new Font("Arial", 12, FontStyle.Bold);
-            chartArea.AxisX.MajorGrid.LineColor = Color.LightGray;
-            chartArea.AxisY.MajorGrid.LineColor = Color.LightGray;
-            chartArea.AxisX.Interval = 1;
-            chart1.ChartAreas.Add(chartArea);
-
-            // Настройка серии
-            Series series = new Series("Состояния");
-            series.ChartType = SeriesChartType.Line;
-            series.Color = Color.Blue;
-            series.BorderWidth = 2;
-            series.MarkerStyle = MarkerStyle.Circle;
-            series.MarkerSize = 6;
-            series.MarkerColor = Color.Red;
-            chart1.Series.Add(series);
-
-            // Добавление заголовка
-            chart1.Titles.Add("График изменения состояний системы");
-            chart1.Titles[0].Font = new Font("Arial", 14, FontStyle.Bold);
-            chart1.Titles[0].Alignment = ContentAlignment.TopCenter;
+            ConfigureChart(); // Настройка графика при инициализации формы
         }
 
         private void button1_Click(object sender, EventArgs e)
         {
-            // Чтение данных
-            int t_max = int.Parse(textBox1.Text);
-            int n = int.Parse(textBox2.Text);
+            // Чтение данных, введённых пользователем
+            int t_max = int.Parse(textBox1.Text); // Максимальное количество шагов
+            int n = int.Parse(textBox2.Text); // Количество состояний
+            int runs = 100; // Количество прогонов модели
+
+            // Проверка валидности количества состояний
             if (n <= 1)
             {
                 MessageBox.Show("Количество состояний должно быть больше 1.");
@@ -61,67 +30,83 @@ namespace Markov_Chains
             }
 
             // Инициализация данных
-            Random random = new Random();
-            double[] p_vector = GenerateDistribution(n, random);
-            double[,] p_matrix = GenerateTransitionMatrix(n, random);
-            List<int> states = new List<int>();
-            int absorbingState = n - 1; // Поглощающее состояние
+            Random random = new Random(); // Генератор случайных чисел
+            double[,] p_matrix = GenerateTransitionMatrix(n, random); // Генерация матрицы переходных вероятностей
+            int absorbingState = n - 1; // Установка последнего состояния как поглощающего
 
-            int totalTimeToAbsorption = 0;
-            int absorptionCount = 0;
+            int totalTimeToAbsorption = 0; // Общая сумма времени до поглощения
+            int absorptionCount = 0; // Количество прогонов, достигших поглощающего состояния
+            Dictionary<int, int> stateFrequency = new Dictionary<int, int>(); // Частота нахождения в состояниях
 
-            for (int t = 0; t < t_max; t++)
+            // Прогон модели runs раз
+            for (int run = 0; run < runs; run++)
             {
-                // Генерация нового состояния
-                int currentState = RandomState(p_vector, random);
-                states.Add(currentState);
+                // Генерация начального распределения вероятностей
+                double[] p_vector = GenerateDistribution(n, random);
+                List<int> states = new List<int>();
 
-                // Проверка на поглощение
-                if (currentState == absorbingState)
+                // Эмуляция шагов для текущего прогона
+                for (int t = 0; t < t_max; t++)
                 {
-                    totalTimeToAbsorption += t;
-                    absorptionCount++;
-                    break;
-                }
+                    // Генерация нового состояния
+                    int currentState = RandomState(p_vector, random);
+                    states.Add(currentState);
 
-                // Обновление распределения
-                p_vector = UpdateDistribution(p_vector, p_matrix);
+                    // Увеличение частоты нахождения в текущем состоянии
+                    if (!stateFrequency.ContainsKey(currentState))
+                        stateFrequency[currentState] = 0;
+                    stateFrequency[currentState]++;
+
+                    // Проверка, достигнуто ли поглощающее состояние
+                    if (currentState == absorbingState)
+                    {
+                        totalTimeToAbsorption += t; // Сохранение времени до поглощения
+                        absorptionCount++; // Увеличение счётчика прогонов с поглощением
+                        break; // Выход из цикла шагов
+                    }
+
+                    // Обновление распределения вероятностей
+                    p_vector = UpdateDistribution(p_vector, p_matrix);
+                }
             }
 
             // Обновление данных графика
             chart1.Series["Состояния"].Points.Clear();
-            for (int i = 0; i < states.Count; i++)
+            foreach (var state in stateFrequency)
             {
-                chart1.Series["Состояния"].Points.AddXY(i, states[i]);
+                chart1.Series["Состояния"].Points.AddXY(state.Key, state.Value);
             }
 
-            // Вывод результатов
+            // Вывод результатов в listBox1
             listBox1.Items.Clear();
             listBox1.Items.Add("Среднее время до поглощения: " +
-                               (absorptionCount > 0 ? (totalTimeToAbsorption / absorptionCount).ToString() : "Не достигнуто"));
-            listBox1.Items.Add("Частота состояний:");
-            foreach (var group in states.GroupBy(x => x))
+                               (absorptionCount > 0 ? (totalTimeToAbsorption / (double)absorptionCount).ToString("F2") : "Не достигнуто"));
+            listBox1.Items.Add("Распределение вероятностей состояний:");
+            foreach (var state in stateFrequency.OrderBy(x => x.Key))
             {
-                listBox1.Items.Add($"Состояние {group.Key}: {group.Count()}");
+                double probability = state.Value / (double)(runs * t_max); // Расчёт вероятности для каждого состояния
+                listBox1.Items.Add($"Состояние {state.Key}: {probability:P2}");
             }
         }
 
+        // Генерация начального распределения вероятностей
         private double[] GenerateDistribution(int size, Random random)
         {
             double[] distribution = new double[size];
             double sum = 0;
             for (int i = 0; i < size; i++)
             {
-                distribution[i] = random.NextDouble();
+                distribution[i] = random.NextDouble(); // Случайное значение вероятности
                 sum += distribution[i];
             }
             for (int i = 0; i < size; i++)
             {
-                distribution[i] /= sum;
+                distribution[i] /= sum; // Нормализация вероятностей
             }
             return distribution;
         }
 
+        // Генерация матрицы переходных вероятностей
         private double[,] GenerateTransitionMatrix(int size, Random random)
         {
             double[,] matrix = new double[size, size];
@@ -130,32 +115,34 @@ namespace Markov_Chains
                 double sum = 0;
                 for (int j = 0; j < size; j++)
                 {
-                    matrix[i, j] = random.NextDouble();
+                    matrix[i, j] = random.NextDouble(); // Случайное значение вероятности перехода
                     sum += matrix[i, j];
                 }
                 for (int j = 0; j < size; j++)
                 {
-                    matrix[i, j] /= sum;
+                    matrix[i, j] /= sum; // Нормализация вероятностей
                 }
             }
             return matrix;
         }
 
+        // Генерация следующего состояния на основе текущего распределения вероятностей
         private int RandomState(double[] probabilities, Random random)
         {
-            double r = random.NextDouble();
+            double r = random.NextDouble(); // Случайное число от 0 до 1
             double cumulative = 0;
             for (int i = 0; i < probabilities.Length; i++)
             {
-                cumulative += probabilities[i];
+                cumulative += probabilities[i]; // Накопление вероятностей
                 if (r < cumulative)
                 {
-                    return i;
+                    return i; // Возврат состояния, соответствующего вероятности
                 }
             }
-            return probabilities.Length - 1;
+            return probabilities.Length - 1; // Возврат последнего состояния, если случайное число больше всех
         }
 
+        // Обновление распределения вероятностей на основе матрицы переходов
         private double[] UpdateDistribution(double[] current, double[,] matrix)
         {
             double[] newDistribution = new double[current.Length];
@@ -164,11 +151,40 @@ namespace Markov_Chains
                 double sum = 0;
                 for (int i = 0; i < current.Length; i++)
                 {
-                    sum += current[i] * matrix[i, j];
+                    sum += current[i] * matrix[i, j]; // Умножение вектора на матрицу
                 }
                 newDistribution[j] = sum;
             }
             return newDistribution;
+        }
+
+        // Настройка графика
+        private void ConfigureChart()
+        {
+            chart1.ChartAreas.Clear();
+            chart1.Series.Clear();
+            chart1.Titles.Clear();
+
+            // Добавление области графика
+            ChartArea chartArea = new ChartArea("MainArea");
+            chartArea.AxisX.Title = "Состояния";
+            chartArea.AxisY.Title = "Частота";
+            chartArea.AxisX.TitleFont = new Font("Arial", 12, FontStyle.Bold);
+            chartArea.AxisY.TitleFont = new Font("Arial", 12, FontStyle.Bold);
+            chartArea.AxisX.MajorGrid.LineColor = Color.LightGray;
+            chartArea.AxisY.MajorGrid.LineColor = Color.LightGray;
+            chart1.ChartAreas.Add(chartArea);
+
+            // Настройка серии
+            Series series = new Series("Состояния");
+            series.ChartType = SeriesChartType.Column;
+            series.Color = Color.Blue;
+            chart1.Series.Add(series);
+
+            // Добавление заголовка
+            chart1.Titles.Add("Распределение состояний");
+            chart1.Titles[0].Font = new Font("Arial", 14, FontStyle.Bold);
+            chart1.Titles[0].Alignment = ContentAlignment.TopCenter;
         }
     }
 }
